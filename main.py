@@ -2,8 +2,6 @@ import os
 from database import DatabaseHandler
 from ocr_handler import OCRHandler
 
-#make all comments english
-
 def main():
     # 1. Define paths
     # Folder where images are located
@@ -38,6 +36,9 @@ def main():
 
         # a: Extract raw text from the image
         raw_text = ocr.extract_text(full_path)
+
+        # Save the full image text to the new log table
+        db.add_image_log(image_file, raw_text)
         
         # b: Convert the text to separate lines
         lines = ocr.process_text_to_lines(raw_text)

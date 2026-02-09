@@ -23,7 +23,30 @@ class DatabaseHandler:
                 status TEXT DEFAULT 'pending'
             )
         """)
+        
+        # Create a table to log processed images and their full text
+        # filename: Name of the image file (unique)
+        # full_text: Full text extracted from the image before processing
+        self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS images_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT UNIQUE,
+                full_text TEXT
+            )
+        """)
         self.conn.commit()
+
+    def add_image_log(self, filename, full_text):
+        """
+        Logs the image and its full text.
+        If the filename already exists, it will skip logging to avoid duplicates.
+        """
+        try:
+            self.cursor.execute("INSERT INTO images_log (filename, full_text) VALUES (?, ?)", (filename, full_text))
+            self.conn.commit()
+            print(f"Image logged: {filename}")
+        except sqlite3.IntegrityError:
+            print(f"Image log already exists for: {filename}")
 
     def add_raw_track(self, raw_text):
         """
