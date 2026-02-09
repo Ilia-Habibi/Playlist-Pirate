@@ -1,51 +1,121 @@
-import pytesseract
-from PIL import Image
+import cv2
+import numpy as np
 import os
+import pytesseract
 
 class OCRHandler:
     def __init__(self, tesseract_path=r'C:\Program Files\Tesseract-OCR\tesseract.exe'):
         """
-        This class is responsible for interacting with the Tesseract engine.
+        Initializes the OCR handler and sets the Tesseract executable path.
+        Make sure to update the path if Tesseract is installed in a different location.
         """
-        # Set the path to the Tesseract executable
-        # If the user has installed it in a different location, they can change it
         if os.path.exists(tesseract_path):
             pytesseract.pytesseract.tesseract_cmd = tesseract_path
         else:
             print(f"Warning: Tesseract functionality might fail. File not found at: {tesseract_path}")
             print("Please ensure Tesseract-OCR is installed and the path is correct.")
 
-    def extract_text(self, image_path):
+    def preprocess_image(self, image_path):
         """
-        Takes an image and returns all the text within it.
+        Preprocesses the image to improve OCR accuracy:
+        1. Cropping to remove irrelevant parts (like phone status bar and navigation bar)
+        2. Converting to grayscale
+        3. Applying thresholding to increase contrast
         """
-        try:
-            # 1. Open the image using the Pillow library
-            img = Image.open(image_path)
-            
-            # 2. Convert the image to a text string using pytesseract
-            # lang='eng' specifies the English language.
-            # config='--psm 6' assumes the text is a single uniform block (good for lists)
-            text = pytesseract.image_to_string(img, lang='eng', config='--psm 6')
-            
-            return text
-        except Exception as e:
-            print(f"Error processing image {image_path}: {e}")
-            return ""
+        # Read the image with OpenCV
+        img = cv2.imread(image_path)
+        if img is None:
+            return None
 
-    def process_text_to_lines(self, raw_text):
-        """
-        Takes raw text and cleans it line by line.
-        Returns a list of non-empty lines.
-        """
-        lines = []
-        # Split the text into lines
-        raw_lines = raw_text.split('\n')
+        h, w, _ = img.shape
+
+        # Crop the image
+        # Assuming the relevant content is roughly in the middle of the image, we can crop out the top, bottom, and sides.
+        top_crop = int(w * 0.25)
+        bottom_crop = int(h - (w * 0.1))
+        left_crop = int(w * 0.15)
+        right_crop = int(w - (w * 0.15))
         
-        for line in raw_lines:
-            clean_line = line.strip()
-            # Keep only lines that have at least 3 characters (to remove noise)
-            if len(clean_line) > 3:
-                lines.append(clean_line)
+        # [start_y:end_y, start_x:end_x]
+        cropped_img = img[top_crop:bottom_crop, left_crop:right_crop]
+
+        # Convert to grayscale
+        gray = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2GRAY)
+
+        # Check for dark mode (dark background)
+        # If the mean pixel intensity is low, it's likely a dark background with light text.
+        # Tesseract works best with dark text on light background, so we invert.
+        if np.mean(gray) < 127:
+            gray = cv2.bitwise_not(gray)
+
+        # Apply thresholding to increase contrast
+        # This makes the text completely black and the background white
+        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+
+        return binary
+
+    def extract_text_data(self, image_path):
+        """
+        Instead of plain text, returns full data (line coordinates).
+        This helps us understand which lines are related.
+        """
+        processed_img = self.preprocess_image(image_path)
+        if processed_img is None:
+            return []
+
+        # Get detailed OCR data, including line positions and text
+        # Includes left, top, width, height, text
+        data = pytesseract.image_to_data(processed_img, output_type=pytesseract.Output.DICT)
         
-        return lines
+        return data
+
+    def extract_clean_tracks(self, image_path):
+        """
+        Extracts text data and tries to group nearby lines together (song name + artist).
+        Returns a list of grouped lines and the full raw text for logging.
+        """
+        data = self.extract_text_data(image_path)
+        if not data:
+            return [], "" # Empty list and empty text
+
+        n_boxes = len(data['text'])
+        grouped_lines = []
+        current_group = []
+        last_top = 0
+        last_height = 0
+        
+        full_raw_text = "" # For logging
+
+        for i in range(n_boxes):
+            # If the text is not empty (ignore spaces)
+            text = data['text'][i].strip()
+            if not text:
+                continue
+
+            full_raw_text += text + " "
+
+            top = data['top'][i]
+            height = data['height'][i]
+            
+            # Grouping logic:
+            # If the vertical distance between this word and the previous word is small, they belong to the same group (e.g., continuation of the song name or artist name below it)
+            # Reasonable distance: less than 1.5 times the font height
+            if last_top == 0 or (top - last_top) < (last_height * 2.5): 
+                current_group.append(text)
+            else:
+                # Too far from the last line, start a new group
+                if current_group:
+                    grouped_lines.append(" ".join(current_group))
+                current_group = [text]
+
+            last_top = top
+            last_height = height
+
+        # Add the last group
+        if current_group:
+            grouped_lines.append(" ".join(current_group))
+
+        return grouped_lines, full_raw_text
+
+    
+

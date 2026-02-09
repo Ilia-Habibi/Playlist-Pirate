@@ -34,21 +34,25 @@ def main():
         full_path = os.path.join(images_dir, image_file)
         print(f"\nScanning: {image_file}")
 
-        # a: Extract raw text from the image
-        raw_text = ocr.extract_text(full_path)
+        # a: Extract text and group lines (song + artist) using the new method
+        try:
+            # Extract grouped lines and the full raw text for logging
+            grouped_lines, raw_text_full = ocr.extract_clean_tracks(full_path)
+            
+            # b: Log the image and its full raw text in the database
+            db.add_image_log(image_file, raw_text_full)
+            
+            print(f"Found {len(grouped_lines)} potential tracks.")
 
-        # Save the full image text to the new log table
-        db.add_image_log(image_file, raw_text)
-        
-        # b: Convert the text to separate lines
-        lines = ocr.process_text_to_lines(raw_text)
-        
-        print(f"Found {len(lines)} lines of text.")
-
-        # c: Save each line to the database
-        for line in lines:
-            # The add_raw_track function itself checks for duplicates and prints messages
-            db.add_raw_track(line)
+            # c: Save each group (song + artist) in the database
+            for line in grouped_lines:
+                clean_line = line.strip()
+                # Only add to the database if the cleaned line has more than 3 characters (to avoid very short or empty entries)
+                if len(clean_line) > 3: 
+                    db.add_raw_track(clean_line)
+                    
+        except Exception as e:
+            print(f"Error processing {image_file}: {e}")
 
     # 5. Close the database
     db.close()

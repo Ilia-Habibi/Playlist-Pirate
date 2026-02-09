@@ -1,2 +1,4 @@
 input_images/*
 !input_images/test.jpg
+__pycache__/*
+playlist.db
