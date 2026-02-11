@@ -48,9 +48,15 @@ class OCRHandler:
         if np.mean(gray) < 127:
             gray = cv2.bitwise_not(gray)
 
-        # Apply thresholding to increase contrast
-        # This makes the text completely black and the background white
-        _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        # Apply thresholding
+        # Using Adaptive Thresholding instead of Otsu because it handles low contrast (gray on black/white) better.
+        # It calculates the threshold locally, so even if the text is light gray on white, it can separate it.
+        binary = cv2.adaptiveThreshold(
+            gray, 255, 
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY, 
+            31, 15 # blockSize=31 (covers text height), C=15 (aggressive filtering of background)
+        )
 
         return binary
 
