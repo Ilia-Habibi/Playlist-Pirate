@@ -13,6 +13,10 @@ class DatabaseHandler:
         # raw_text: Raw text read from the image (must be unique)
         # song_name: Cleaned song name (to be filled later)
         # artist_name: Cleaned artist name (to be filled later)
+        # album: Album name (to be filled later)
+        # yt_id: YouTube ID for the track (to be filled later)
+        # cover_url: URL of the cover image (to be filled later)
+        # duration: Duration of the track (to be filled later)
         # status: Track status (e.g., pending, cleaned, downloaded)
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS tracks (
@@ -20,6 +24,10 @@ class DatabaseHandler:
                 raw_text TEXT UNIQUE,
                 song_name TEXT,
                 artist_name TEXT,
+                album TEXT,
+                yt_id TEXT,
+                cover_url TEXT,
+                duration TEXT,
                 status TEXT DEFAULT 'pending'
             )
         """)
