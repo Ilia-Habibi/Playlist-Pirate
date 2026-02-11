@@ -64,11 +64,77 @@ class DatabaseHandler:
         try:
             self.cursor.execute("INSERT INTO tracks (raw_text) VALUES (?)", (raw_text,))
             self.conn.commit()
-            print(f"Added: {raw_text}")
+            print(f"Added raw track: {raw_text}")
             return True
         except sqlite3.IntegrityError:
-            print(f"Duplicate skipped: {raw_text}")
+            # print(f"Duplicate skipped: {raw_text}") # Too noisy
             return False
+
+    def get_pending_tracks(self):
+        """
+        List of tracks that have not been searched yet (status pending).
+        """
+        self.cursor.execute("SELECT id, raw_text FROM tracks WHERE status = 'pending'")
+        return self.cursor.fetchall()
+
+    def update_track_info(self, track_id, info):
+        """
+        Updates track information after finding it in the API.
+        Also checks for duplicate tracks (duplicate yt_id).
+        If a duplicate is found, this row is deleted.
+        """
+        yt_id = info['yt_id']
+
+        # 1. Check for duplicate yt_id in other rows
+        # We are looking for a row that has the same yt_id but a different id than the current track_id
+        self.cursor.execute("SELECT id FROM tracks WHERE yt_id = ? AND id != ?", (yt_id, track_id))
+        duplicate = self.cursor.fetchone()
+
+        if duplicate:
+            # If a duplicate is found, it means we have already found this song with another OCR.
+            # So we delete this new version (weaker or duplicate).
+            print(f"Duplicate song found for ID {track_id} (matches existing ID {duplicate[0]}). Deleting duplicate entry.")
+            self.cursor.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
+            self.conn.commit()
+            return False # Indicates that the update was not performed (deleted)
+        
+        # 2. If not a duplicate, update
+        self.cursor.execute("""
+            UPDATE tracks 
+            SET song_name = ?, 
+                artist_name = ?, 
+                album = ?, 
+                yt_id = ?, 
+                cover_url = ?, 
+                duration = ?, 
+                status = 'found'
+            WHERE id = ?
+        """, (
+            info['title'], 
+            info['artist'], 
+            info['album'], 
+            yt_id, 
+            info['cover_url'], 
+            info['duration'], 
+            track_id
+        ))
+        self.conn.commit()
+        print(f"Updated track {track_id}: {info['title']} - {yt_id}")
+        return True
+
+    def mark_track_not_found(self, track_id):
+        """
+        If not found in the API, change the status so it won't be searched again.
+        """
+        self.cursor.execute("UPDATE tracks SET status = 'not_found' WHERE id = ?", (track_id,))
+        self.conn.commit()
+
+    def is_image_processed(self, filename):
+        """
+        Checks if this image has been processed before.
+        """
+        self.cursor.execute("SELECT id FROM images_log WHERE filename = ?", (filename,))
+        return self.cursor.fetchone() is not None
 
     def close(self):
         self.conn.close()
