@@ -1,3 +1,13 @@
+"""
+Database Management Module.
+
+Handles all SQLite interactions for the application.
+Responsibilities:
+- Schema initialization (tracks table, image processing logs).
+- Deduplication logic (preventing duplicate processing of the same image or track).
+- State management for tracks (pending -> searched -> downloaded).
+"""
+
 import sqlite3
 
 class DatabaseHandler:
@@ -127,6 +137,24 @@ class DatabaseHandler:
         If not found in the API, change the status so it won't be searched again.
         """
         self.cursor.execute("UPDATE tracks SET status = 'not_found' WHERE id = ?", (track_id,))
+        self.conn.commit()
+
+    def get_tracks_to_download(self):
+        """
+        List of tracks that have been found but not yet downloaded (status 'found').
+        """
+        self.cursor.execute("""
+            SELECT id, song_name, artist_name, album, yt_id, cover_url 
+            FROM tracks 
+            WHERE status = 'found'
+        """)
+        return self.cursor.fetchall()
+
+    def mark_track_downloaded(self, track_id):
+        """
+        Mark the track as downloaded.
+        """
+        self.cursor.execute("UPDATE tracks SET status = 'downloaded' WHERE id = ?", (track_id,))
         self.conn.commit()
 
     def is_image_processed(self, filename):

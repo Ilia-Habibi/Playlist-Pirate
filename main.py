@@ -1,4 +1,16 @@
+"""
+Main Application Entry Point.
+
+This script coordinates the entire pipeline:
+1. Scans the 'input_images' directory for new screenshots.
+2. Invokes the OCR module to extract raw text (artist - song).
+3. Logs processed images to the database to prevent re-processing.
+4. Searches for metadata on YouTube Music using the Music API module.
+5. Downloads the highest quality audio available using the Downloader module.
+"""
+
 from database import DatabaseHandler
+from downloader import Downloader
 from music_api import MusicFinder
 from ocr_handler import OCRHandler
 import os
@@ -10,8 +22,9 @@ def main():
     
     # 2. Initialize classes
     db = DatabaseHandler()
-    ocr = OCRHandler() # Assumes Tesseract is installed in the default location or the path is correctly set
-    finder = MusicFinder() # Initialize the music finder
+    ocr = OCRHandler() 
+    finder = MusicFinder() 
+    downloader = Downloader()
 
     # --- Part 1: Image Processing (OCR) ---
     if not os.path.exists(images_dir):
@@ -37,6 +50,7 @@ def main():
             grouped_lines, raw_text_full = ocr.extract_clean_tracks(full_path)
             
             # Save the full image text to the log table so we don't process it again
+            # This is crucial for avoiding duplicate work if the script is restarted
             db.add_image_log(image_file, raw_text_full)
             
             print(f"Found {len(grouped_lines)} potential tracks.")
@@ -44,6 +58,7 @@ def main():
             for line in grouped_lines:
                 clean_line = line.strip()
                 # Only add to the database if the cleaned line has more than 3 characters (to avoid very short or empty entries)
+                # Short entries are often noise from the OCR process
                 if len(clean_line) > 3: 
                     db.add_raw_track(clean_line)
                     
@@ -80,6 +95,49 @@ def main():
         
         # Short delay to prevent hitting rate limits
         time.sleep(1)
+
+    # --- Part 3: Download & Tagging ---
+    print("\n--- Starting Downloads ---")
+
+    # Get tracks ready for download
+    found_tracks = db.get_tracks_to_download()
+
+    if not found_tracks:
+        print("No tracks ready for download.")
+    else:
+        print(f"Found {len(found_tracks)} tracks to download.")
+
+    for track_id, song_name, artist_name, album, yt_id, cover_url in found_tracks:
+        print(f"\nProcessing: {song_name} - {artist_name}")
+
+        # 1. Check file size
+        file_size = downloader.get_file_info(yt_id)
+        size_mb = file_size / (1024 * 1024) if file_size else 0
+        
+        if size_mb > 30:
+            user_input = input(f"Warning: File size is large ({size_mb:.2f} MB). Download? (y/n): ")
+            if user_input.lower() != 'y':
+                print("Skipped by user.")
+                continue
+
+        # 2. Download
+        # Filename: Artist - Song.mp3
+        # Remove illegal characters from filename
+        safe_filename = f"{artist_name} - {song_name}".replace("/", "-").replace("\\", "-").replace(":", "-").replace("?", "").replace("*", "").replace("\"", "").replace("<", "").replace(">", "").replace("|", "")
+        
+        file_path = downloader.download_audio(yt_id, safe_filename)
+
+        if file_path:
+            print("Download successful. Adding metadata...")
+            
+            # 3. Add Metadata
+            downloader.add_metadata(file_path, song_name, artist_name, album, cover_url)
+            
+            # 4. Update Database
+            db.mark_track_downloaded(track_id)
+            print("Done.")
+        else:
+            print("Download failed.")
 
     db.close()
     print("\nAll tasks complete.")

@@ -1,3 +1,11 @@
+"""
+Music API Wrapper.
+
+Interface for the ytmusicapi library to search and retrieve metadata.
+Focuses on finding the best match (Official Song or High Quality Video) based on
+title and artist queries.
+"""
+
 from ytmusicapi import YTMusic
 
 class MusicFinder:

@@ -1,3 +1,13 @@
+"""
+OCR Handler Module.
+
+Leverages Tesseract-OCR and OpenCV for robust text extraction.
+Key Features:
+- Adaptive Thresholding for handling dark mode/low contrast images.
+- Intelligent cropping to remove status bars and navigation UI.
+- Text grouping logic to combine fragmented lines into coherent track names.
+"""
+
 import cv2
 import numpy as np
 import os
